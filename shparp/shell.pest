@@ -1,0 +1,189 @@
+
+WHITESPACE = _{ "\t" | "\r" | "\n" }
+tilde_expansion = { "~" | "~/" }
+param_sub = { "${" ~ WORD ~ "}" }
+command_sub = { "$(" ~ WORD ~ ")" | "`" ~ WORD ~ "`" }
+arithmetic_sub = { "$((" ~ WORD ~ "))" }
+
+WORD = {(ASCII_ALPHA | ASCII_DIGIT | "-"| "_" | "=" | "~")+}
+NAME = {ASCII_ALPHA ~ (ASCII_DIGIT | ASCII_ALPHA| "_")+}
+ASSIGNMENT_WORD = {(ASCII_ALPHA| "_")+}
+IO_NUMBER = { ASCII_DIGIT+}
+
+  and_if     = { "&&" }
+  or_if      = { "||" }
+  DSEMI      = { ";;" }
+
+  DLESS      = { "<<" }
+  DGREAT     = { ">>" }
+  LESSAND    = { "<&" }
+  GREATAND   = { ">&" }
+  LESSGREAT  = { "<>" }
+  DLESSDASH  = { "<<-" }
+
+CLOBBER = { ">|" }
+
+  if            = { "if" }
+  fi            = { "fi" }
+  then          = { "then" }
+  else          = { "else" }
+  elif          = { "elif" }
+  do            = { "do" }
+  done          = { "done" }
+
+  case       = { "case" }
+  esac       = { "esac" }
+  while      = { "while" }
+  until      = { "until" }
+  for        = { "for" }
+
+  lbrace      = { "lbrace" }
+  rbrace      = { "rbrace" }
+  bang        = { "bang" }
+  in          = { "in" }
+
+separator_op = { "&" | ";" }
+
+newline_list = {NEWLINE*}
+
+linebreak = {newline_list}
+
+separator = { separator_op ~ linebreak | newline_list }
+
+sequential_sep = { ";" ~ linebreak | newline_list }
+
+
+filename = {WORD}
+here_end = {WORD}
+
+io_here = { DLESSDASH ~ here_end | DLESS ~ here_end }
+
+io_file = {
+"<"       ~filename | 
+LESSAND   ~filename | 
+">"       ~filename | 
+GREATAND  ~filename | 
+DGREAT    ~filename | 
+LESSGREAT ~filename | 
+CLOBBER   ~filename    }
+
+
+io_redirect = {
+    io_file | IO_NUMBER ~ io_file | io_here | IO_NUMBER ~ io_here
+  }
+
+
+redirect_list = { io_redirect+ }
+
+short_opt = {"-" ~ WORD}
+long_opt = {"--" ~ WORD}
+suffix_word = _{long_opt | short_opt | param_sub | tilde_expansion | WORD}
+
+cmd_suffix = {
+  ( suffix_word | io_redirect) ~ (" " | suffix_word | io_redirect)*
+}
+cmd_prefix = {
+  (ASSIGNMENT_WORD | io_redirect)* ~ (ASSIGNMENT_WORD | io_redirect)
+}
+cmd_word = {WORD}
+cmd_name = {WORD}
+
+simple_command = {
+  cmd_prefix ~ cmd_word ~ cmd_suffix | 
+  cmd_prefix ~ cmd_word | 
+  cmd_prefix | 
+  cmd_name ~ " "* ~ cmd_suffix | 
+  cmd_name
+  }
+
+do_group = {do ~ compound_list ~ done}
+
+brace_group = { lbrace ~ compound_list ~ rbrace }
+
+fname = {NAME}
+
+function_body = {compound_command | compound_command ~ redirect_list}
+
+function_definition = {fname ~ "(" ~ ")" ~ linebreak ~ function_body}
+
+
+until_clause = {until ~ compound_list ~ do_group}
+while_clause = {while ~ compound_list ~ do_group}
+
+else_part = { elif ~ compound_list ~ then ~ compound_list | elif ~ compound_list ~ then ~compound_list ~ else_part | else ~ compound_list}
+
+if_clause = {if ~ compound_list ~ then ~ compound_list ~ else_part ~ fi | if ~ compound_list ~ then ~ compound_list ~ fi}
+
+pattern = {WORD ~ ("|" ~ WORD)*}
+
+case_item = {
+    pattern ~ ")" ~ linebreak ~ DSEMI ~ linebreak |
+    pattern ~ ")" ~ compound_list ~ DSEMI ~ linebreak |
+    "(" ~ pattern ~ ")" ~ linebreak ~ DSEMI ~ linebreak |
+    "(" ~ pattern ~ ")" ~ compound_list ~ DSEMI ~ linebreak 
+  }
+
+case_item_ns = {
+    pattern ~ ")" ~ linebreak |
+    pattern ~ ")" ~ compound_list |
+    "(" ~ pattern ~ ")" ~ linebreak |
+    "(" ~ pattern ~ ")" ~ compound_list 
+  }
+
+
+case_list = {case_item+}
+case_list_ns = {case_item_ns+}
+
+case_clause = {
+    case ~ WORD ~linebreak ~ in ~ linebreak ~ case_list ~ esac |
+    case ~ WORD ~linebreak ~ in ~ linebreak ~ case_list_ns ~ esac |
+    case ~ WORD ~linebreak ~ in ~ linebreak ~ esac 
+  }
+
+wordlist = {WORD+}
+name = {NAME}
+
+for_clause = {
+    for ~ name ~ do_group |
+    for ~ name ~ sequential_sep ~ do_group |
+    for ~ name ~ linebreak ~ in ~ sequential_sep ~ do_group |
+    for ~ name ~ linebreak ~ in ~ wordlist ~ sequential_sep ~ do_group 
+  }
+
+term = { and_or ~ (separator ~ and_or)* }
+
+subshell = { "(" ~ compound_list ~ ")" }
+compound_list = {linebreak ~ term | linebreak ~ term ~ separator}
+
+compound_command = {
+    brace_group |
+    subshell | 
+    for_clause |
+    case_clause |
+    if_clause |
+    while_clause |
+    until_clause
+  }
+
+command = {
+    simple_command |
+    compound_command |
+    compound_command ~ redirect_list |
+    function_definition
+  }
+
+pipe_sequence = {command ~ ("|" ~ linebreak ~ command)* }
+pipeline = { pipe_sequence | bang ~ pipe_sequence }
+
+and_or = {
+  pipeline~ (and_if ~ linebreak ~ pipeline | or_if ~ linebreak ~ pipeline)*
+     }
+
+list = {and_or ~ (separator_op ~ and_or)* }
+complete_command = {list ~ (separator_op ~ list)*}
+
+args = {(ASCII_ALPHA | ASCII_DIGIT | "--" | "-" | " " | "=")*}
+complete_commands = {complete_command ~ (newline_list ~ complete_command)*}
+
+program = { linebreak ~ (complete_commands ~ linebreak?)* }
+
